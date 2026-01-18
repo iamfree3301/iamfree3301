@@ -1,15 +1,28 @@
 import random
 import telebot
+import os
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask
+from threading import Thread
 
-# --- Settings ---
-# သတိပေးချက်- Token ကို လုံခြုံအောင် သိမ်းဆည်းပါ။
+# --- Flask Server Setup (Render Free Plan အတွက်) ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is Running!"
+
+def run_web_server():
+    # Render ပေးတဲ့ Port ကို သုံးဖို့ဖြစ်ပါတယ်။
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+# --- Bot Settings ---
 API_TOKEN = '8584313182:AAEzQDI1Ir5zruVNrs5sS41vL4ZwoeGp_cc'
 bot = telebot.TeleBot(API_TOKEN)
 
 # --- CC Generation Logic ---
 def luhn_checksum(card_number):
-    """Luhn Algorithm သုံးပြီး card number မှန်မမှန် စစ်ဆေးခြင်း"""
     digits = [int(x) for x in card_number]
     odd_digits = digits[-1::-2]
     even_digits = digits[-2::-2]
@@ -19,77 +32,23 @@ def luhn_checksum(card_number):
     return checksum % 10 == 0
 
 def generate_cc(bin_number):
-    """BIN ပေါ်မူတည်ပြီး Card Length သတ်မှတ်ကာ Card နံပါတ် ထုတ်ပေးခြင်း"""
     cc = str(bin_number)
-    # Card length logic
     if cc.startswith(('34', '37')):
-        target_len = 15 # AMEX
+        target_len = 15
     elif cc.startswith(('300', '301', '302', '303', '304', '305', '36', '38')):
-        target_len = 14 # Diners Club
+        target_len = 14
     else:
-        target_len = 16 # Visa, Master, Discover
+        target_len = 16
 
     while len(cc) < (target_len - 1):
         cc += str(random.randint(0, 9))
 
-    # Luhn digit ကို နောက်ဆုံးမှာ ပေါင်းထည့်ခြင်း
     for i in range(10):
         if luhn_checksum(cc + str(i)):
             return cc + str(i)
     return cc + "0"
 
 def get_cc_list(bin_num, user_tag, month=None, year=None, amount=10):
-    is_amex = bin_num.startswith(('34', '37'))
-    cvv_range = (1000, 9999) if is_amex else (100, 999)
-    result = "<b>CARDS GENERATED SUCCESSFULLY</b> ✅\n"
-    result += f"<b>BIN</b> ⇾ <code>{bin_num}</code>\n"
-    result += f"<b>AMOUNT</b> ⇾ <code>{amount}</code>\n\n"
-    for _ in range(amount):
-        cc_num = generate_cc(bin_num)
-        final_m = month if month else random.randint(1, 12)
-        final_y = year if year else random.randint(2026, 2033)
-        cvv = random.randint(*cvv_range)
-        result += f"<code>{cc_num}|{final_m:02d}|{final_y}|{cvv}</code>\n"
-    return result
-
-def gen_markup(b, m, y, a):
-    m_val = m if m else "R"
-    y_val = y if y else "R"
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("🔄 Regenerate", callback_data=f"regen_{b}_{m_val}_{y_val}_{a}"),
-        InlineKeyboardButton("❌ Close", callback_data="delete_msg")
-    )
-    return markup
-
-# --- Bot Handlers ---
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    welcome_text = (
-        "<b>Bot: Online ✅</b>\n\n"
-        f"👋 <b>Hello {message.from_user.first_name}!</b>\n\n"
-        "📖 <b>Usage Guide:</b>\n"
-        "➥ <code>/gen BIN</code>\n"
-        "➥ <code>/gen BIN MM YYYY Amount</code>\n\n"
-        "💡 <b>Example:</b> <code>/gen 559888 12 2028 10</code>"
-    )
-    bot.reply_to(message, welcome_text, parse_mode="HTML")
-
-@bot.message_handler(commands=['gen'])
-def handle_gen(message):
-    try:
-        args = message.text.split()
-        if len(args) < 2:
-            bot.reply_to(message, "❌ <b>Usage:</b> <code>/gen BIN</code>", parse_mode="HTML")
-            return
-        
-        bin_num = args[1]
-        if not bin_num.isdigit():
-            bot.reply_to(message, "⚠️ <b>Error:</b> BIN must be numeric!", parse_mode="HTML")
-            return
-
-        month = int(args[2]) if len(args) >= 3 and args[2].isdigit() else None
-        year = int(args[3]) if len(args) >= 4 and args[3].isdigit() else None
         amount = int(args[4]) if len(args) >= 5 and args[4].isdigit() else 10
 
         if amount > 50:
